@@ -1,40 +1,64 @@
-# PyTest strategy
+# Test approach
 
-The task places strong emphasis on test-driven development, so the tests are separated by business area and marked by purpose.
+pytest is used for the transformation and validation logic. Each test creates a small Spark DataFrame with only the rows needed for that case.
 
-## Test categories
+## Test groups
 
-### Unit
+### Unit tests
 
-Tests one transformation rule at a time using small in-memory Spark DataFrames. Examples include date conversion, profit rounding, postal-code normalization, product consolidation, and aggregate calculations.
+These test one rule at a time, such as:
 
-### Data quality
+- Date conversion
+- Customer name cleaning
+- Postal code formatting
+- Product duplicate handling
+- Profit rounding
+- Aggregate totals
 
-Tests invalid and edge-case records. Examples include missing IDs, duplicate Row IDs, invalid dates, non-positive quantity, negative price, invalid discount, missing lookups, and corrupted customer attributes.
+### Data quality tests
 
-### Integration
+These cover bad or unexpected records:
 
-Tests interactions across transformations. Examples include product consolidation followed by order enrichment, preservation of order count through joins, and reconciliation between detail and aggregate profit.
+- Missing required columns
+- Null and duplicate keys
+- Invalid dates
+- Zero or negative quantity
+- Negative price
+- Discount outside the range 0 to 1
+- Missing customer or product lookup
+- Corrupted customer values
 
-## Coverage by area
+Negative profit is tested as a valid value because it represents a loss.
 
-| Area | Main scenarios |
+### Integration tests
+
+These check more than one step together:
+
+- Product cleanup followed by order enrichment
+- Order count before and after joins
+- Duplicate products do not duplicate order rows
+- Detail profit matches aggregate profit
+- Broadcast and normal joins return the same result
+
+## Test files
+
+| File | Area |
 |---|---|
-| Structural validation | Missing columns, null keys, duplicate keys |
-| Customers | Missing name, corrupted name, invalid phone, email flag, postal code, duplicate customer |
-| Products | Duplicate IDs, deterministic name, conflict flags, price range, missing key |
-| Orders | Date parsing, profit rounding, negative profit, invalid quantity/price/discount, duplicate Row ID, quarantine split |
-| Enrichment | Matched values, missing customer/product, left-join behavior, row-count preservation, no join multiplication |
-| Aggregation | Exact sums, losses, year grain, same name/different IDs, decimal precision, detail-to-aggregate reconciliation |
-
-## Why tests do not read the source files
-
-Unit tests should fail because business logic is wrong, not because a file path or Excel connector is unavailable. Each test creates only the minimum DataFrame needed for the scenario. File-reading and Delta-writing behavior remains in the Databricks notebooks.
+| `test_customers.py` | Customer cleaning |
+| `test_products.py` | Product cleaning and duplicates |
+| `test_orders.py` | Order rules and quarantine |
+| `test_enrichment.py` | Customer and product joins |
+| `test_aggregations.py` | Profit aggregation |
+| `test_validation.py` | Schema, key and total checks |
 
 ## Commands
 
 ```bash
 pytest -q
+pytest -q -m unit
 pytest -q -m data_quality
+pytest -q -m integration
 pytest -q --cov=ecommerce_pipeline --cov-report=term-missing
 ```
+
+File ingestion and Delta writes stay in the Databricks notebooks. The unit tests focus on the PySpark business logic, so they do not depend on a Drive path or a running Databricks workspace.

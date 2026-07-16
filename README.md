@@ -1,85 +1,92 @@
-# E-commerce Sales Processing – Databricks and PySpark
+# E-commerce Sales Pipeline
 
-This repository contains the solution for the Lead Data Engineer take-home task. The pipeline loads the three supplied source files, creates cleaned customer and product dimensions, builds an enriched order-line table, and produces the requested profit aggregates.
+This project processes the three files provided for the Lead Data Engineer task:
 
-The implementation is deliberately small and testable. Databricks notebooks orchestrate the work, while the transformation logic is kept in normal Python modules so it can be tested with PyTest without writing data to Delta tables.
+- `Customer.xlsx`
+- `Products.csv`
+- `Orders.json`
+
+The data processing is written in PySpark and runs from Databricks notebooks. SQL is used only for the final reporting queries.
+
+## What the pipeline does
+
+1. Loads each source file into a raw Delta table.
+2. Cleans the customer and product data.
+3. Creates an enriched order table with customer and product details.
+4. Creates a profit aggregate by year, category, sub-category and customer.
+5. Runs the four requested SQL queries.
+
+The SQL outputs are:
+
+- Profit by year
+- Profit by year and product category
+- Profit by customer
+- Profit by customer and year
 
 ## Data flow
 
 ```text
 Customer.xlsx ─┐
-Products.csv ──┼── Bronze raw tables
-Orders.json ───┘          │
-                          ▼
-                    Silver tables
-             customers_enriched
-             products_enriched
-             orders_clean / orders_quarantine
-                          │
-                          ▼
-                     Gold tables
-             order_enriched
-             profit_aggregate
+Products.csv ──┼── Raw tables
+Orders.json ───┘       |
+                       v
+                 Cleaned tables
+              customers_enriched
+              products_enriched
+              orders_clean
+                       |
+                       v
+                  Gold tables
+                order_enriched
+                profit_aggregate
 ```
 
 ## Table grain
 
-| Table | Grain |
+| Table | One row represents |
 |---|---|
-| `customers_enriched` | One row per `customer_id` |
-| `products_enriched` | One row per `product_id` |
-| `orders_clean` | One row per source order line (`row_id`) |
-| `order_enriched` | One enriched source order line (`row_id`) |
-| `profit_aggregate` | Year + category + sub-category + customer ID + customer name |
+| `customers_enriched` | One customer |
+| `products_enriched` | One product |
+| `orders_clean` | One order line |
+| `order_enriched` | One enriched order line |
+| `profit_aggregate` | One year, category, sub-category and customer combination |
 
-`Order ID` is not used as the order-line key because a single order can contain multiple product lines. `Row ID` is unique in the supplied order file.
+`Row ID` is used as the order-line key. One `Order ID` can have more than one product, so it is not unique.
 
-## Important data decisions
+## Data issues handled
 
-### Product duplicates
+- Some product IDs occur more than once. Products are reduced to one row per ID before joining to orders.
+- Some orders have product IDs that are not in the product file. These orders are kept and the product fields are set to `Unknown`.
+- Invalid order rows are written to `orders_quarantine` with the reason.
+- Customer names, phone numbers and postal codes are cleaned where needed.
+- Profit uses a decimal type and is rounded to two decimal places.
+- Negative profit is kept because it represents a loss.
 
-The product file contains 1,851 rows but only 1,818 unique Product IDs. A direct join would duplicate some order lines. The product transformation first creates one deterministic record per Product ID and retains conflict indicators such as `product_name_conflict_flag`.
-
-### Missing product lookups
-
-Orders reference 44 Product IDs that are not present in the product file. These affect 204 order lines. The pipeline uses a left join so the sales records are not lost. Missing category and sub-category values are written as `Unknown`, with `product_lookup_status = 'MISSING'`.
-
-### Customer quality issues
-
-The customer file contains missing names, digits and unwanted characters in names, `#ERROR!` phone values, and postal codes where leading zeroes were lost. The cleaning rules keep the original name, standardize the usable value, and add quality flags instead of silently hiding the issue.
-
-### Money and profit
-
-Price and profit use decimal types. Negative profit is valid because it represents a loss. It is not rejected or replaced with zero. Profit is rounded to two decimal places in the clean order transformation and again at the aggregate boundary.
+More details are in [docs/data_design.md](docs/data_design.md).
 
 ## Project structure
 
 ```text
-src/ecommerce_pipeline/     reusable PySpark transformations and validations
-notebooks/                  Databricks orchestration notebooks
-sql/                        requested SQL outputs
-tests/                      PyTest unit, data-quality and integration tests
-docs/                       design notes, source profile and test strategy
-.github/workflows/          GitHub Actions test workflow
+notebooks/                  Databricks notebooks
+src/ecommerce_pipeline/     PySpark transformations and checks
+tests/                      pytest test cases
+sql/                        SQL output queries
+docs/                       Data design and test notes
+.github/workflows/          Test workflow
 ```
 
-## Databricks execution
+## Run in Databricks
 
-1. Upload the three source files to a Unity Catalog Volume, for example:
-
-   ```text
-   /Volumes/main/ecommerce_landing/source/
-   ```
-
-2. Install a `spark-excel` Maven library that matches the Databricks Runtime. The ingestion notebook uses the `com.crealytics.spark.excel` format because the customer source is an `.xlsx` file.
-
-3. Add this repository as a Databricks Repo or install the package from the repository root:
+1. Upload the three source files to a Unity Catalog Volume.
+2. Install a `spark-excel` library that matches the Databricks Runtime.
+3. Add this repository to Databricks Repos.
+4. Install the project from the repository root:
 
    ```python
    %pip install -e .
    ```
 
-4. Run the notebooks in order:
+5. Run the notebooks in this order:
 
    ```text
    00_setup
@@ -89,69 +96,55 @@ docs/                       design notes, source profile and test strategy
    04_sql_outputs
    ```
 
-The default catalog is `main`. Change the notebook widget when another catalog is required.
+The default source path is `/Volumes/main/ecommerce_landing/source`. It can be changed through the notebook widget.
 
-## Running tests
+## Run tests
 
 ```bash
 pip install -e ".[dev]"
 pytest -q
 ```
 
-Useful subsets:
+Run a specific test group:
 
 ```bash
 pytest -q -m unit
 pytest -q -m data_quality
 pytest -q -m integration
-pytest -q --cov=ecommerce_pipeline --cov-report=term-missing
 ```
 
-The tests use small in-memory Spark DataFrames. They do not depend on the source files, Databricks paths, or Delta tables, which keeps failures focused on the transformation being tested.
+The tests create small Spark DataFrames in memory. This keeps them fast and makes each test independent of Databricks and the source file location.
 
-## Main validations
+The test suite covers:
 
-- Mandatory source columns are present.
-- Customer and product dimension keys are unique before the Gold join.
-- Invalid order rows are sent to `orders_quarantine` with a clear error reason.
-- Duplicate `row_id` values are rejected.
-- Ship date cannot be before order date.
-- Quantity must be greater than zero.
-- Price cannot be null or negative.
-- Discount must be between zero and one.
-- Negative profit is accepted.
-- The enriched order count must match the valid order count.
-- Duplicate product source records must not multiply order rows.
-- Total profit in the aggregate must reconcile to total profit in the enriched table.
+- Required columns and schema checks
+- Customer and product cleaning
+- Valid and invalid order records
+- Duplicate keys
+- Date, quantity, price and discount rules
+- Missing customer and product lookups
+- Profit rounding and negative profit
+- Row counts after joins
+- Profit totals after aggregation
 
-## Supplied-data reconciliation values
+See [docs/test_strategy.md](docs/test_strategy.md) for the test split.
 
-These values are useful when checking a full Databricks run:
+## Results for the provided files
 
-| Check | Expected |
+| Check | Result |
 |---|---:|
-| Customer source rows | 793 |
-| Product source rows | 1,851 |
-| Consolidated products | 1,818 |
-| Order source rows | 9,994 |
-| Enriched order rows | 9,994, provided no source order is rejected |
+| Customers | 793 |
+| Product rows | 1,851 |
+| Unique products | 1,818 |
+| Order lines | 9,994 |
 | Aggregate rows | 8,129 |
 | Total profit | 278,417.03 |
 
-Profit by year:
-
-| Year | Profit |
-|---:|---:|
-| 2014 | 39,185.75 |
-| 2015 | 63,073.09 |
-| 2016 | 65,073.23 |
-| 2017 | 111,084.96 |
+The source files are not committed to GitHub. They should be downloaded from the Drive link in the task document.
 
 ## Assumptions
 
-- The supplied files are full snapshots, so the take-home implementation uses deterministic overwrite writes.
-- `Row ID` is the order-line business key.
-- Customer ID and Product ID comparisons are trimmed and converted to upper case.
-- The supplied US postal codes are represented as five-character strings after cleaning.
-- Customer and product lookups use left joins to retain valid orders.
-- In a production incremental design, Bronze ingestion would use Auto Loader and Silver/Gold tables would use Delta `MERGE` with the documented keys.
+- The three input files are full extracts, so the tables use overwrite mode.
+- Customer ID and Product ID are trimmed and converted to upper case before joining.
+- Customer and product joins are left joins so valid orders are not dropped.
+- The supplied data is small, so the output is not partitioned.

@@ -1,30 +1,40 @@
 # Data design
 
-## Layers
+The pipeline uses three layers: raw, cleaned and gold.
 
-### Bronze
+## Raw layer
 
-Bronze tables keep the source column names and values and add:
+The raw tables keep the source columns as they are. Three metadata columns are added:
 
 - `_source_file`
 - `_ingestion_timestamp`
 - `_pipeline_run_id`
 
-The Bronze layer is intentionally light. Business cleaning is performed in Silver.
+Tables:
 
-### Silver
+- `customers_raw`
+- `products_raw`
+- `orders_raw`
 
-`customers_enriched` cleans customer details and provides quality flags.
+## Cleaned layer
 
-`products_enriched` consolidates duplicate Product IDs before they are used in a join. The chosen product name is deterministic, and conflict counts remain available for review.
+`customers_enriched` contains one row per customer. It cleans names, email, phone and postal code values and keeps simple quality flags.
 
-`orders_clean` contains valid, typed order lines. `orders_quarantine` contains invalid order lines with `dq_error_reason` and a rejection timestamp.
+`products_enriched` contains one row per product. The product file has duplicate product IDs, so they are combined before the order join. Conflict flags show when duplicate rows have different values.
 
-### Gold
+`orders_clean` contains valid, typed order lines. Invalid rows go to `orders_quarantine` with `dq_error_reason`.
 
-`order_enriched` is the master order-line table. It contains order information, two-decimal profit, customer name and country, and product category and sub-category.
+## Gold layer
 
-`profit_aggregate` contains the requested aggregation grain:
+`order_enriched` is the main order-line table. It includes:
+
+- Order details
+- Profit rounded to two decimal places
+- Customer name and country
+- Product category and sub-category
+- Customer and product lookup status
+
+`profit_aggregate` is grouped by:
 
 ```text
 order_year
@@ -34,23 +44,20 @@ customer_id
 customer_name
 ```
 
-## Join design
+## Join choices
 
-The customer and product tables are dimension-sized and are broadcast in the Gold transformation. Only required columns are selected before joining.
+Customer and product tables are small, so they are broadcast before the joins.
 
-Both joins are left joins. Missing dimension data is surfaced through lookup-status columns rather than causing an otherwise valid order line to disappear.
+Both joins are left joins. An order is kept even when its customer or product lookup is missing. Missing text values are set to `Unknown`, and a lookup status is added.
 
-## Write strategy
+Customer and product keys are checked for duplicates before the join. This avoids increasing the number of order rows by mistake.
 
-The assignment files are full snapshots. Tables are therefore written using Delta overwrite with `overwriteSchema=true`. This makes reruns idempotent for the supplied use case.
+## Write choice
 
-A production incremental extension would use:
+The input files are full extracts and are small enough for this task. Delta tables are written in overwrite mode so a rerun gives the same result.
 
-- Auto Loader for new files
-- Delta `MERGE` by `customer_id`, `product_id`, and `row_id`
-- a run-control table for watermarks and processing status
-- scheduled compaction based on actual file size and query patterns
+For a regular production feed, I would change raw ingestion to Auto Loader and use Delta `MERGE` for changed records.
 
-## Performance
+## Partitioning
 
-The supplied data is small and is not partitioned. Partitioning 9,994 order rows would create unnecessary small files. At larger scale, the order tables could use liquid clustering on `order_date`, `customer_id`, or another frequently filtered column after observing the real workload.
+The order file contains 9,994 rows. Partitioning data of this size would create many small files, so no partition column is used.
