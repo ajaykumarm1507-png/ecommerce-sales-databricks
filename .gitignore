@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+.idea/
+.vscode/
+.DS_Store
+reports/*.xml
+reports/*.html
+# Source files are supplied separately through the assignment Drive link.
+data/source/*
+!data/source/.gitkeep

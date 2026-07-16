@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ecommerce-databricks-pipeline"
+version = "0.1.0"
+description = "PySpark data pipeline and tests for the e-commerce sales engineering task"
+requires-python = ">=3.10"
+dependencies = [
+  "pyspark>=3.5,<4.1"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-cov>=5.0"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra --strict-markers"
+markers = [
+  "unit: fast tests for isolated transformation functions",
+  "data_quality: tests for validation and bad-record handling",
+  "integration: tests covering multiple transformations together"
+]
