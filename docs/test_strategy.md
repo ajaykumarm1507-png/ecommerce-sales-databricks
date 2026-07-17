@@ -51,14 +51,4 @@ These check more than one step together:
 | `test_aggregations.py` | Profit aggregation |
 | `test_validation.py` | Schema, key and total checks |
 
-## Commands
-
-```bash
-pytest -q
-pytest -q -m unit
-pytest -q -m data_quality
-pytest -q -m integration
-pytest -q --cov=ecommerce_pipeline --cov-report=term-missing
-```
-
 File ingestion and Delta writes stay in the Databricks notebooks. The unit tests focus on the PySpark business logic, so they do not depend on a Drive path or a running Databricks workspace.

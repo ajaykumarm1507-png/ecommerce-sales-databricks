@@ -1,150 +1,119 @@
 # E-commerce Sales Pipeline
 
-This project processes the three files provided for the Lead Data Engineer task:
+This project is for the Lead Data Engineer assignment. It uses the three files shared in the Drive link:
 
 - `Customer.xlsx`
 - `Products.csv`
 - `Orders.json`
 
-The data processing is written in PySpark and runs from Databricks notebooks. SQL is used only for the final reporting queries.
+All transformation logic is written in PySpark. SQL is used only for the final output queries requested in the task.
 
-## What the pipeline does
+## Scope
 
-1. Loads each source file into a raw Delta table.
-2. Cleans the customer and product data.
-3. Creates an enriched order table with customer and product details.
-4. Creates a profit aggregate by year, category, sub-category and customer.
-5. Runs the four requested SQL queries.
+The pipeline covers these requirements:
 
-The SQL outputs are:
+| Requirement | Output |
+|---|---|
+| Raw ingestion | `customers_raw`, `products_raw`, `orders_raw` |
+| Customer enrichment | `customers_enriched` |
+| Product enrichment | `products_enriched` |
+| Order enrichment | `order_enriched` |
+| Profit aggregate | `profit_aggregate` |
+| SQL outputs | Queries in `sql/profit_queries.sql` |
+
+## Data Flow
+
+```text
+Source files
+    |
+    v
+Raw tables
+    |
+    v
+Cleaned customer, product and order tables
+    |
+    v
+Enriched order table
+    |
+    v
+Profit aggregate table
+```
+
+## Main Tables
+
+| Table | Grain |
+|---|---|
+| `customers_raw` | One row from `Customer.xlsx` |
+| `products_raw` | One row from `Products.csv` |
+| `orders_raw` | One row from `Orders.json` |
+| `customers_enriched` | One customer |
+| `products_enriched` | One product |
+| `order_enriched` | One order line with customer and product details |
+| `profit_aggregate` | Year, product category, product sub-category and customer |
+
+`Row ID` is used as the order-line key because one `Order ID` can contain multiple products.
+
+## Enriched Order Table
+
+`order_enriched` includes:
+
+- Order ID, row ID, order date, ship date and ship mode
+- Profit rounded to two decimal places
+- Customer name and country
+- Product category and sub-category
+- Lookup status for customer and product joins
+
+## SQL Outputs
+
+The SQL file contains only the requested reporting queries:
 
 - Profit by year
 - Profit by year and product category
 - Profit by customer
 - Profit by customer and year
 
-## Data flow
+## Data Checks
 
-```text
-Customer.xlsx ─┐
-Products.csv ──┼── Raw tables
-Orders.json ───┘       |
-                       v
-                 Cleaned tables
-              customers_enriched
-              products_enriched
-              orders_clean
-                       |
-                       v
-                  Gold tables
-                order_enriched
-                profit_aggregate
-```
+The pipeline handles common data issues found in the files:
 
-## Table grain
-
-| Table | One row represents |
-|---|---|
-| `customers_enriched` | One customer |
-| `products_enriched` | One product |
-| `orders_clean` | One order line |
-| `order_enriched` | One enriched order line |
-| `profit_aggregate` | One year, category, sub-category and customer combination |
-
-`Row ID` is used as the order-line key. One `Order ID` can have more than one product, so it is not unique.
-
-## Data issues handled
-
-- Some product IDs occur more than once. Products are reduced to one row per ID before joining to orders.
-- Some orders have product IDs that are not in the product file. These orders are kept and the product fields are set to `Unknown`.
-- Invalid order rows are written to `orders_quarantine` with the reason.
-- Customer names, phone numbers and postal codes are cleaned where needed.
-- Profit uses a decimal type and is rounded to two decimal places.
+- Required source columns are checked before processing.
+- Customer and product keys are standardized before joins.
+- Duplicate product IDs are reduced to one product record before joining with orders.
+- Invalid order rows are separated into `orders_quarantine` with an error reason.
+- Orders are kept even when the product lookup is missing.
+- Profit is stored as a decimal value and rounded to two decimal places.
 - Negative profit is kept because it represents a loss.
 
-More details are in [docs/data_design.md](docs/data_design.md).
+## Tests
 
-## Project structure
+pytest test cases are included for the PySpark logic. The tests use small in-memory Spark DataFrames and cover:
+
+- Schema and required column checks
+- Customer and product cleaning
+- Duplicate key handling
+- Order date, quantity, price and discount rules
+- Profit rounding
+- Missing customer and product lookups
+- Enriched order row-count checks
+- Aggregate profit totals
+- Positive and negative scenarios
+
+Test files are under `tests/`.
+
+## Project Structure
 
 ```text
-notebooks/                  Databricks notebooks
-src/ecommerce_pipeline/     PySpark transformations and checks
+notebooks/                  Databricks notebooks for the pipeline steps
+src/ecommerce_pipeline/     PySpark transformation and validation code
 tests/                      pytest test cases
-sql/                        SQL output queries
-docs/                       Data design and test notes
-.github/workflows/          Test workflow
+sql/                        final SQL output queries
+docs/                       short design and test notes
 ```
-
-## Run in Databricks
-
-1. Upload the three source files to a Unity Catalog Volume.
-2. Install a `spark-excel` library that matches the Databricks Runtime.
-3. Add this repository to Databricks Repos.
-4. Install the project from the repository root:
-
-   ```python
-   %pip install -e .
-   ```
-
-5. Run the notebooks in this order:
-
-   ```text
-   00_setup
-   01_raw_ingestion
-   02_build_silver
-   03_build_gold
-   04_sql_outputs
-   ```
-
-The default source path is `/Volumes/main/ecommerce_landing/source`. It can be changed through the notebook widget.
-
-## Run tests
-
-```bash
-pip install -e ".[dev]"
-pytest -q
-```
-
-Run a specific test group:
-
-```bash
-pytest -q -m unit
-pytest -q -m data_quality
-pytest -q -m integration
-```
-
-The tests create small Spark DataFrames in memory. This keeps them fast and makes each test independent of Databricks and the source file location.
-
-The test suite covers:
-
-- Required columns and schema checks
-- Customer and product cleaning
-- Valid and invalid order records
-- Duplicate keys
-- Date, quantity, price and discount rules
-- Missing customer and product lookups
-- Profit rounding and negative profit
-- Row counts after joins
-- Profit totals after aggregation
-
-See [docs/test_strategy.md](docs/test_strategy.md) for the test split.
-
-## Results for the provided files
-
-| Check | Result |
-|---|---:|
-| Customers | 793 |
-| Product rows | 1,851 |
-| Unique products | 1,818 |
-| Order lines | 9,994 |
-| Aggregate rows | 8,129 |
-| Total profit | 278,417.03 |
-
-The source files are not committed to GitHub. They should be downloaded from the Drive link in the task document.
 
 ## Assumptions
 
-- The three input files are full extracts, so the tables use overwrite mode.
+- The input files are treated as full extracts.
+- Raw tables keep the original source columns.
 - Customer ID and Product ID are trimmed and converted to upper case before joining.
 - Customer and product joins are left joins so valid orders are not dropped.
-- The supplied data is small, so the output is not partitioned.
+- The data volume is small, so no partitioning is added for this assignment.
