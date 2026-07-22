@@ -9,7 +9,7 @@
 SELECT
     order_year,
     ROUND(SUM(total_profit), 2) AS total_profit
-FROM main.ecommerce_gold.profit_aggregate
+FROM main.ecommerce_sales.profit_aggregate
 GROUP BY order_year
 ORDER BY order_year;
 
@@ -20,7 +20,7 @@ SELECT
     order_year,
     product_category,
     ROUND(SUM(total_profit), 2) AS total_profit
-FROM main.ecommerce_gold.profit_aggregate
+FROM main.ecommerce_sales.profit_aggregate
 GROUP BY order_year, product_category
 ORDER BY order_year, product_category;
 
@@ -31,7 +31,7 @@ SELECT
     customer_id,
     customer_name,
     ROUND(SUM(total_profit), 2) AS total_profit
-FROM main.ecommerce_gold.profit_aggregate
+FROM main.ecommerce_sales.profit_aggregate
 GROUP BY customer_id, customer_name
 ORDER BY total_profit DESC;
 
@@ -43,6 +43,6 @@ SELECT
     customer_name,
     order_year,
     ROUND(SUM(total_profit), 2) AS total_profit
-FROM main.ecommerce_gold.profit_aggregate
+FROM main.ecommerce_sales.profit_aggregate
 GROUP BY customer_id, customer_name, order_year
 ORDER BY customer_id, order_year;

@@ -33,7 +33,7 @@ Raw tables
 Cleaned customer, product and order tables
     |
     v
-Enriched order table
+Transformation and enrichment tables
     |
     v
 Profit aggregate table
@@ -113,7 +113,8 @@ docs/                       short design and test notes
 ## Assumptions
 
 - The input files are treated as full extracts.
-- Raw tables keep the original source columns.
+- Raw tables are stored under `ecommerce_raw`.
+- Transformed, enriched and aggregate tables are stored together under `ecommerce_sales`.
 - Customer ID and Product ID are trimmed and converted to upper case before joining.
 - Customer and product joins are left joins so valid orders are not dropped.
 - The data volume is small, so no partitioning is added for this assignment.

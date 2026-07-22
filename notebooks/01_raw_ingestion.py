@@ -1,6 +1,6 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Bronze ingestion
+# MAGIC # Raw ingestion
 # MAGIC Reads the supplied Excel, CSV and JSON files using explicit schemas and adds ingestion metadata.
 
 # COMMAND ----------
@@ -22,10 +22,10 @@ dbutils.widgets.text("source_path", "/Volumes/main/ecommerce_landing/source", "S
 
 catalog = dbutils.widgets.get("catalog")
 source_path = dbutils.widgets.get("source_path").rstrip("/")
-bronze_schema = f"{catalog}.ecommerce_bronze"
+raw_schema = f"{catalog}.ecommerce_raw"
 pipeline_run_id = str(uuid4())
 
-spark.sql(f"CREATE SCHEMA IF NOT EXISTS {bronze_schema}")
+spark.sql(f"CREATE SCHEMA IF NOT EXISTS {raw_schema}")
 
 # COMMAND ----------
 
@@ -65,9 +65,9 @@ orders_raw = add_ingestion_metadata(orders_raw, "Orders.json")
 
 # COMMAND ----------
 
-overwrite_delta_table(customers_raw, f"{bronze_schema}.customers_raw")
-overwrite_delta_table(products_raw, f"{bronze_schema}.products_raw")
-overwrite_delta_table(orders_raw, f"{bronze_schema}.orders_raw")
+overwrite_delta_table(customers_raw, f"{raw_schema}.customers_raw")
+overwrite_delta_table(products_raw, f"{raw_schema}.products_raw")
+overwrite_delta_table(orders_raw, f"{raw_schema}.orders_raw")
 
 print(
     {
